@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Piecewise – Multiplayer Jigsaw</title>
+<style>
+:root{--bg:#f4efe6;--fg:#2a2622;--card:#fffdf9;--ac:#c2512f;--mut:#8a8178;--bd:#ddd3c4;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#1f1c19;--fg:#efe8dd;--card:#2b2723;--ac:#e0704b;--mut:#a59b8f;--bd:#433d36}}
+:root[data-theme="dark"]{--bg:#1f1c19;--fg:#efe8dd;--card:#2b2723;--ac:#e0704b;--mut:#a59b8f;--bd:#433d36}
+*{box-sizing:border-box}html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--fg);font:15px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;overflow:hidden}
+button,select,input{font:inherit;color:inherit}
+.btn{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:8px 14px;cursor:pointer}
+.btn.p{background:var(--ac);border-color:var(--ac);color:#fff;font-weight:600}
+.btn:active{transform:scale(.97)}
+#home{height:100%;overflow:auto;padding:24px 16px}
+.wrap{max-width:720px;margin:0 auto}
+h1{font:700 34px Georgia,serif;margin:0 0 4px}h1 span{color:var(--ac)}
+.sub{color:var(--mut);margin:0 0 20px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:16px;margin-bottom:14px}
+.card h2{font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--mut);margin:0 0 10px}
+.gal{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px}
+.gal .t{border:3px solid transparent;border-radius:10px;overflow:hidden;cursor:pointer;aspect-ratio:3/2;background:#888;position:relative}
+.gal .t.sel{border-color:var(--ac)}.gal img{width:100%;height:100%;object-fit:cover;display:block}
+.gal .up{display:flex;align-items:center;justify-content:center;text-align:center;color:var(--mut);border:2px dashed var(--bd);background:transparent;font-size:13px;padding:6px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+input[type=text],select{background:var(--bg);border:1px solid var(--bd);border-radius:10px;padding:8px 12px}
+input[type=text]{width:130px;text-transform:uppercase;letter-spacing:.15em;text-align:center}
+#game{display:none;height:100%;flex-direction:column}
+#bar{display:flex;gap:8px;align-items:center;padding:8px 10px;background:var(--card);border-bottom:1px solid var(--bd);flex-wrap:wrap}
+#bar .grow{flex:1}.chip{background:var(--bg);border:1px solid var(--bd);border-radius:20px;padding:4px 12px;font-variant-numeric:tabular-nums;font-size:13px}
+#cv{flex:1;width:100%;display:block;touch-action:none;cursor:grab;min-height:0}
+#toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:10px 18px;border-radius:24px;opacity:0;transition:.3s;pointer-events:none;z-index:9;max-width:90%;text-align:center}
+#toast.on{opacity:1}
+#win{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;z-index:8}
+#win div{background:var(--card);padding:28px 36px;border-radius:16px;text-align:center}
+#win h2{font:700 28px Georgia,serif;margin:0 0 6px}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#2fa66a;margin-right:6px}
+</style></head><body>
+<div id="home"><div class="wrap">
+<h1>Piece<span>wise</span></h1><p class="sub">Online jigsaw puzzles. Play solo, or share a room code and solve it together.</p>
+<div class="card"><h2>1 · Pick a picture</h2><div class="gal" id="gal"></div>
+<input type="file" id="file" accept="image/*" hidden></div>
+<div class="card"><h2>2 · Pieces</h2><div class="row"><select id="n"><option value="24">24 pieces</option><option value="48" selected>48 pieces</option><option value="96">96 pieces</option><option value="150">150 pieces</option><option value="240">240 pieces</option></select></div></div>
+<div class="card"><h2>3 · Play</h2><div class="row">
+<button class="btn p" id="solo">Play solo</button>
+<button class="btn p" id="mk">Create multiplayer room</button></div>
+<div class="row" style="margin-top:12px"><input type="text" id="code" maxlength="5" placeholder="CODE"><button class="btn" id="jn">Join room</button></div></div>
+</div></div>
+<div id="game">
+<div id="bar"><button class="btn" id="back">←</button><span class="chip" id="rc"></span><span class="chip" id="tm">0:00</span><span class="chip" id="pg"></span><span class="grow"></span>
+<button class="btn" id="gh" title="Toggle guide image">Guide</button><button class="btn" id="pk" title="Hold to peek">Peek</button><button class="btn" id="zo">−</button><button class="btn" id="zi">+</button><button class="btn" id="ft">Fit</button></div>
+<canvas id="cv"></canvas></div>
+<div id="toast"></div>
+<div id="win"><div><h2>Puzzle complete! 🎉</h2><p id="wt" style="color:var(--mut)"></p><button class="btn p" id="wc">Close</button></div></div>
+<script>
+const $=s=>document.querySelector(s),cv=$('#cv'),x=cv.getContext('2d'),hx=document.createElement('canvas').getContext('2d');
+const CELL=80;let S=null,V={s:1,tx:0,ty:0},drag=null,pan=null,ghost=false,peek=false,room=null,pend=null,chosen=null,tick=null,won=false;
+const rng=a=>()=>{a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296};
+function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(toast.h);toast.h=setTimeout(()=>t.classList.remove('on'),2800)}
+/* ---------- built-in pictures (drawn, so they work offline) ---------- */
+function art(k){const c=document.createElement('canvas');c.width=1200;c.height=800;const g=c.getContext('2d'),r=rng(k*77+3);
+ if(k==0){let gr=g.createLinearGradient(0,0,0,800);gr.addColorStop(0,'#2b1b5a');gr.addColorStop(.5,'#d9486b');gr.addColorStop(1,'#ffb347');g.fillStyle=gr;g.fillRect(0,0,1200,800);
+  g.fillStyle='#fff7d6';g.beginPath();g.arc(820,430,90,0,7);g.fill();
+  for(let i=0;i<4;i++){g.fillStyle=`hsl(${280-i*10},${40+i*8}%,${28-i*6}%)`;g.beginPath();g.moveTo(0,800);for(let X=0;X<=1200;X+=20)g.lineTo(X,470+i*90+Math.sin(X/130+i*2)*45+Math.sin(X/57+i)*14);g.lineTo(1200,800);g.fill()}}
+ else if(k==1){g.fillStyle='#14202e';g.fillRect(0,0,1200,800);for(let i=0;i<110;i++){const R=20+r()*110;g.fillStyle=`hsla(${r()*360},80%,60%,${.35+r()*.4})`;g.beginPath();g.arc(r()*1200,r()*800,R,0,7);g.fill()}}
+ else{let gr=g.createLinearGradient(0,0,0,800);gr.addColorStop(0,'#bfe9ff');gr.addColorStop(1,'#fff3d1');g.fillStyle=gr;g.fillRect(0,0,1200,800);g.fillStyle='#ffd24d';g.beginPath();g.arc(300,200,80,0,7);g.fill();
+  for(let i=0;i<9;i++){g.fillStyle=`hsl(${200+i*4},${70-i*3}%,${72-i*7}%)`;g.beginPath();g.moveTo(0,800);for(let X=0;X<=1200;X+=15)g.lineTo(X,300+i*55+Math.sin(X/90+i*1.7)*28);g.lineTo(1200,800);g.fill()}}
+ return c.toDataURL('image/jpeg',.82)}
+const names=['Sunset hills','Colour orbs','Ocean waves'];
+names.forEach((n,i)=>{const d=document.createElement('div');d.className='t';d.innerHTML=`<img alt="${n}">`;d.firstChild.src=art(i);d.onclick=()=>pick(d,d.firstChild.src);$('#gal').appendChild(d);if(!i)pick(d,d.firstChild.src)});
+const up=document.createElement('div');up.className='t up';up.textContent='＋ Upload your own photo';up.onclick=()=>$('#file').click();$('#gal').appendChild(up);
+function pick(d,u){document.querySelectorAll('.gal .t').forEach(e=>e.classList.remove('sel'));d.classList.add('sel');chosen=u}
+const load=u=>new Promise((ok,no)=>{const i=new Image();i.onload=()=>ok(i);i.onerror=no;i.src=u});
+$('#file').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{const u=await compress(await load(URL.createObjectURL(f)));
+ const d=document.createElement('div');d.className='t';d.innerHTML='<img alt="Your photo">';d.firstChild.src=u;d.onclick=()=>pick(d,u);$('#gal').insertBefore(d,up);pick(d,u)}catch(err){toast('Could not read that image')}};
+async function compress(im){let sc=Math.min(1,900/Math.max(im.width,im.height)),q=.85,u;
+ for(let i=0;i<12;i++){const c=document.createElement('canvas');c.width=Math.round(im.width*sc);c.height=Math.round(im.height*sc);c.getContext('2d').drawImage(im,0,0,c.width,c.height);u=c.toDataURL('image/jpeg',q);if(u.length<235000)return u;q>.5?q-=.12:sc*=.85}return u}
+/* ---------- jigsaw geometry ---------- */
+function edge(c,x0,y0,x1,y1,s,T){if(!s){c.lineTo(x1,y1);return}
+ const dx=x1-x0,dy=y1-y0,L=Math.hypot(dx,dy),nx=dy/L,ny=-dx/L,k=T*s,p=(u,v)=>[x0+dx*u+nx*v*k,y0+dy*u+ny*v*k],b=(a,b2,c2,d,e,f)=>c.bezierCurveTo(...p(a,b2),...p(c2,d),...p(e,f));
+ c.lineTo(...p(.35,0));b(.43,.04,.40,.40,.38,.62);b(.12,1.35,.88,1.35,.62,.62);b(.60,.40,.57,.04,.65,0);c.lineTo(x1,y1)}
+function path(c,ox,oy,i){const w=CELL,h=CELL,r=i/S.cols|0,cc=i%S.cols,T=.26*CELL;
+ c.beginPath();c.moveTo(ox,oy);edge(c,ox,oy,ox+w,oy,r?-S.bt[i-S.cols]:0,T);edge(c,ox+w,oy,ox+w,oy+h,S.rt[i],T);edge(c,ox+w,oy+h,ox,oy+h,S.bt[i],T);edge(c,ox,oy+h,ox,oy,cc?-S.rt[i-1]:0,T);c.closePath()}
+/* ---------- game setup ---------- */
+async function init(url,cols,rows,seed,pos,t0){const im=await load(url);Object.assign(S={},{cols,rows,seed,W:cols*CELL,H:rows*CELL,t0:t0||Date.now()});
+ const r=rng(seed),N=cols*rows;S.rt=[];S.bt=[];for(let i=0;i<N;i++){S.rt[i]=(i%cols<cols-1)?(r()<.5?1:-1):0;S.bt[i]=(i/cols|0)<rows-1?(r()<.5?1:-1):0}
+ const bm=document.createElement('canvas');bm.width=S.W;bm.height=S.H;const bg=bm.getContext('2d'),sc=Math.max(S.W/im.width,S.H/im.height);
+ bg.drawImage(im,(S.W-im.width*sc)/2,(S.H-im.height*sc)/2,im.width*sc,im.height*sc);S.bm=bm;
+ const pad=Math.ceil(.26*CELL*1.45);S.pad=pad;S.sp=[];
+ for(let i=0;i<N;i++){const c=document.createElement('canvas'),z=CELL+pad*2;c.width=c.height=z;const g=c.getContext('2d'),col=i%cols,row=i/cols|0;
+  g.save();path(g,pad,pad,i);g.clip();g.drawImage(bm,col*CELL-pad,row*CELL-pad,z,z,0,0,z,z);g.restore();
+  path(g,pad,pad,i);g.lineWidth=1.4;g.strokeStyle='rgba(255,255,255,.35)';g.save();g.translate(-.9,-.9);g.stroke();g.restore();g.strokeStyle='rgba(0,0,0,.45)';g.stroke();S.sp.push(c)}
+ S.P=[];if(pos){for(let i=0;i<N;i++)S.P.push({x:pos[i*4],y:pos[i*4+1],g:pos[i*4+2],l:pos[i*4+3]})}
+ else{const q=rng(seed+9);for(let i=0;i<N;i++){let X,Y;do{X=-.6*S.W+q()*(2.2*S.W-CELL);Y=-.6*S.H+q()*(2.2*S.H-CELL)}while(X+CELL>-4&&X<S.W+4&&Y+CELL>-4&&Y<S.H+4);S.P.push({x:X,y:Y,g:i,l:0})}}
+ S.z=[...S.P.keys()].sort((a,b)=>S.P[a].l-S.P[b].l);won=false;$('#home').style.display='none';$('#game').style.display='flex';fit();clearInterval(tick);tick=setInterval(clock,1000);clock()}
+const flat=()=>S.P.flatMap(p=>[Math.round(p.x),Math.round(p.y),p.g,p.l]);
+function clock(){if(!S||won)return;const s=Math.floor((Date.now()-S.t0)/1000);$('#tm').textContent=Math.floor(s/60)+':'+String(s%60).padStart(2,'0')}
+/* ---------- rendering ---------- */
+const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n);
+function fit(){const w=cv.clientWidth,h=cv.clientHeight;V.s=Math.min(w/(2.3*S.W),h/(2.3*S.H));V.tx=w/2-S.W/2*V.s;V.ty=h/2-S.H/2*V.s;draw()}
+function draw(){if(!S)return;const w=cv.clientWidth,h=cv.clientHeight,d=devicePixelRatio||1;if(cv.width!=Math.round(w*d)||cv.height!=Math.round(h*d)){cv.width=Math.round(w*d);cv.height=Math.round(h*d)}
+ x.setTransform(d,0,0,d,0,0);x.clearRect(0,0,w,h);x.translate(V.tx,V.ty);x.scale(V.s,V.s);
+ x.fillStyle=css('--card');x.fillRect(0,0,S.W,S.H);if(ghost){x.globalAlpha=.16;x.drawImage(S.bm,0,0);x.globalAlpha=1}
+ x.lineWidth=2/V.s;x.strokeStyle=css('--mut');x.strokeRect(0,0,S.W,S.H);
+ const dg=drag?drag.ids:[];
+ for(const i of S.z){const p=S.P[i];if(dg.includes(i)){x.shadowColor='rgba(0,0,0,.45)';x.shadowBlur=16;x.shadowOffsetY=5}x.drawImage(S.sp[i],p.x-S.pad,p.y-S.pad);x.shadowColor='transparent';x.shadowBlur=0;x.shadowOffsetY=0}
+ if(peek){x.globalAlpha=.95;x.drawImage(S.bm,0,0);x.globalAlpha=1}
+ $('#pg').textContent=S.P.filter(p=>p.l).length+' / '+S.P.length+' placed'}
+const toW=e=>{const r=cv.getBoundingClientRect();return[(e.clientX-r.left-V.tx)/V.s,(e.clientY-r.top-V.ty)/V.s]};
+function hit(w){for(let k=S.z.length-1;k>=0;k--){const i=S.z[k],p=S.P[i];if(p.l)continue;if(w[0]<p.x-S.pad||w[0]>p.x+CELL+S.pad||w[1]<p.y-S.pad||w[1]>p.y+CELL+S.pad)continue;path(hx,p.x,p.y,i);if(hx.isPointInPath(w[0],w[1]))return i}return-1}
+/* ---------- interaction ---------- */
+cv.onpointerdown=e=>{if(!S)return;cv.setPointerCapture(e.pointerId);const w=toW(e),i=hit(w);
+ if(i>=0){const g=S.P[i].g,ids=S.P.map((p,k)=>p.g===g?k:-1).filter(k=>k>=0);drag={ids,lx:w[0],ly:w[1]};S.z=S.z.filter(k=>!ids.includes(k)).concat(ids);cv.style.cursor='grabbing'}
+ else pan={x:e.clientX,y:e.clientY};draw()};
+cv.onpointermove=e=>{if(drag){const w=toW(e),dx=w[0]-drag.lx,dy=w[1]-drag.ly;drag.ids.forEach(k=>{S.P[k].x+=dx;S.P[k].y+=dy});drag.lx=w[0];drag.ly=w[1];draw()}
+ else if(pan){V.tx+=e.clientX-pan.x;V.ty+=e.clientY-pan.y;pan={x:e.clientX,y:e.clientY};draw()}};
+cv.onpointerup=cv.onpointercancel=()=>{cv.style.cursor='grab';if(drag){const ids=drag.ids;drag=null;settle(ids);if(pend){applyPos(pend);pend=null}push();check()}pan=null;draw()};
+cv.onwheel=e=>{e.preventDefault();const r=cv.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top,f=e.deltaY<0?1.12:1/1.12;zoomAt(mx,my,f)};
+function zoomAt(mx,my,f){const ns=Math.min(4,Math.max(.1,V.s*f));f=ns/V.s;V.tx=mx-(mx-V.tx)*f;V.ty=my-(my-V.ty)*f;V.s=ns;draw()}
+$('#zi').onclick=()=>zoomAt(cv.clientWidth/2,cv.clientHeight/2,1.25);$('#zo').onclick=()=>zoomAt(cv.clientWidth/2,cv.clientHeight/2,.8);$('#ft').onclick=fit;
+$('#gh').onclick=()=>{ghost=!ghost;draw()};
+const pk=$('#pk');pk.onpointerdown=()=>{peek=true;draw()};['pointerup','pointerleave','pointercancel'].forEach(t=>pk.addEventListener(t,()=>{if(peek){peek=false;draw()}}));
+addEventListener('resize',()=>S&&fit());
+function settle(ids){const{cols,rows,P}=S,tol=CELL*.3;
+ for(const i of ids){const p=P[i],tx=(i%cols)*CELL,ty=(i/cols|0)*CELL;
+  if(Math.abs(p.x-tx)<tol&&Math.abs(p.y-ty)<tol){const dx=tx-p.x,dy=ty-p.y;ids.forEach(k=>{P[k].x+=dx;P[k].y+=dy;P[k].l=1});S.z=S.z.filter(k=>!ids.includes(k));S.z.unshift(...ids);return}}
+ let g=P[ids[0]].g,again=true;
+ while(again){again=false;const mem=P.map((p,k)=>p.g===g?k:-1).filter(k=>k>=0);
+  out:for(const i of mem){const r=i/cols|0,c=i%cols;
+   for(const[dr,dc]of[[0,1],[0,-1],[1,0],[-1,0]]){const rr=r+dr,cc=c+dc;if(rr<0||cc<0||cc>=cols||rr>=rows)continue;const j=rr*cols+cc;if(P[j].g===g)continue;
+    const ex=P[i].x+dc*CELL,ey=P[i].y+dr*CELL;
+    if(Math.abs(P[j].x-ex)<tol&&Math.abs(P[j].y-ey)<tol){const ox=P[j].x-ex,oy=P[j].y-ey,jg=P[j].g,lk=P.some(p=>p.g===jg&&p.l);
+     mem.forEach(k=>{P[k].x+=ox;P[k].y+=oy});P.forEach(p=>{if(p.g===g)p.g=jg});g=jg;if(lk)P.forEach(p=>{if(p.g===g)p.l=1});again=true;break out}}}}}
+function check(){if(won||!S)return;if(S.P.every(p=>p.l)||new Set(S.P.map(p=>p.g)).size===1){won=true;const s=Math.floor((Date.now()-S.t0)/1000);$('#wt').textContent='Solved in '+Math.floor(s/60)+'m '+s%60+'s';$('#win').style.display='flex'}}
+$('#wc').onclick=()=>$('#win').style.display='none';
+/* ---------- multiplayer (shared room doc) ---------- */
+function applyPos(pos){S.P.forEach((p,i)=>{p.x=pos[i*4];p.y=pos[i*4+1];p.g=pos[i*4+2];p.l=pos[i*4+3]});S.z.sort((a,b)=>S.P[a].l-S.P[b].l);draw();check()}
+async function push(){if(!room)return;try{room.v=Date.now()+'-'+Math.random();await room.doc.set({seed:S.seed,cols:S.cols,rows:S.rows,t0:S.t0,v:room.v,pos:flat()})}catch(e){setLive(false)}}
+function setLive(on){$('#rc').innerHTML=room?`<span class="dot" style="background:${on?'#2fa66a':'#d9534f'}"></span>Room <b>${room.code}</b> · tap to copy`:'Solo'}
+function listen(){room.doc.onSnapshot(s=>{if(!s.exists)return;const d=s.data();if(d.v===room.v)return;if(!S||d.cols!==S.cols)return;if(drag)pend=d.pos;else applyPos(d.pos);setLive(true)},()=>setLive(false))}
+$('#rc').onclick=()=>{if(room)navigator.clipboard?.writeText(location.href.split('#')[0]+'#'+room.code).then(()=>toast('Link copied. Friends can also enter code '+room.code),()=>toast('Room code: '+room.code))};
+async function getDb(){try{return window.claude?await claude.use('db'):null}catch(e){return null}}
+$('#solo').onclick=async()=>{room=null;setLive();start()};
+async function start(){const N=+$('#n').value,im=await load(chosen),a=im.width/im.height,cols=Math.max(2,Math.round(Math.sqrt(N*a))),rows=Math.max(2,Math.round(N/cols));
+ await init(chosen,cols,rows,Math.floor(Math.random()*1e9))}
+$('#mk').onclick=async()=>{const db=await getDb();if(!db){toast('Multiplayer needs the published, signed-in version. Starting solo.');room=null;setLive();return start()}
+ const code=Array.from({length:5},()=>'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.random()*32|0]).join('');
+ try{await db.doc(`rooms/${code}/meta/img`).set({data:chosen});room={code,doc:db.doc('rooms/'+code),v:''};setLive(true);await start();await push();listen();try{location.hash=code}catch(e){}toast('Room '+code+' is live. Tap the code to copy a link.')}
+ catch(e){toast('Could not create room ('+(e.code||'error')+'). Playing solo.');room=null;setLive();if(!S)start()}};
+$('#jn').onclick=async()=>{const code=$('#code').value.trim().toUpperCase();if(code.length<4)return toast('Enter the room code');const db=await getDb();if(!db)return toast('Multiplayer unavailable here');
+ try{const[r,i]=await Promise.all([db.doc('rooms/'+code).get(),db.doc(`rooms/${code}/meta/img`).get()]);if(!r.exists||!i.exists)return toast('No room with that code');const d=r.data();
+  room={code,doc:db.doc('rooms/'+code),v:''};setLive(true);await init(i.data().data,d.cols,d.rows,d.seed,d.pos,d.t0);listen();check()}catch(e){toast('Could not join ('+(e.code||'error')+')')}};
+$('#back').onclick=()=>{clearInterval(tick);S=null;room=null;$('#game').style.display='none';$('#home').style.display='block'};
+if(location.hash.length>2)$('#code').value=location.hash.slice(1,6);
+</script></body></html>
