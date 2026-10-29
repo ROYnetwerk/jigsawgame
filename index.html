@@ -35,7 +35,9 @@ input[type=text]{width:130px;text-transform:uppercase;letter-spacing:.15em;text-
 #win div{background:var(--card);padding:28px 36px;border-radius:16px;text-align:center}
 #win h2{font:700 28px Georgia,serif;margin:0 0 6px}
 .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#2fa66a;margin-right:6px}
-</style></head><body>
+</style><script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+</head><body>
 <div id="home"><div class="wrap">
 <h1>Piece<span>wise</span></h1><p class="sub">Online jigsaw puzzles. Play solo, or share a room code and solve it together.</p>
 <div class="card"><h2>1 · Pick a picture</h2><div class="gal" id="gal"></div>
@@ -139,11 +141,23 @@ async function push(){if(!room)return;try{room.v=Date.now()+'-'+Math.random();aw
 function setLive(on){$('#rc').innerHTML=room?`<span class="dot" style="background:${on?'#2fa66a':'#d9534f'}"></span>Room <b>${room.code}</b> · tap to copy`:'Solo'}
 function listen(){room.doc.onSnapshot(s=>{if(!s.exists)return;const d=s.data();if(d.v===room.v)return;if(!S||d.cols!==S.cols)return;if(drag)pend=d.pos;else applyPos(d.pos);setLive(true)},()=>setLive(false))}
 $('#rc').onclick=()=>{if(room)navigator.clipboard?.writeText(location.href.split('#')[0]+'#'+room.code).then(()=>toast('Link copied. Friends can also enter code '+room.code),()=>toast('Room code: '+room.code))};
-async function getDb(){try{return window.claude?await claude.use('db'):null}catch(e){return null}}
+/* ===== PASTE YOUR FIREBASE CONFIG HERE (see setup steps) ===== */
+const FIREBASE_CONFIG={
+ apiKey:"AIzaSyC5eP2cKmsoijfsPzbCpngdH72znDd8TlE",
+ authDomain:"jigsawgame-63d90.firebaseapp.com",
+ databaseURL:"https://jigsawgame-63d90-default-rtdb.asia-southeast1.firebasedatabase.app",
+ projectId:"jigsawgame-63d90"
+};
+/* small adapter: Firebase Realtime Database behind the same doc() calls the game uses */
+function fbDb(){try{if(!window.firebase||FIREBASE_CONFIG.apiKey.startsWith('PASTE'))return null;
+ if(!firebase.apps.length)firebase.initializeApp(FIREBASE_CONFIG);const d=firebase.database();
+ const ref=p=>d.ref(p.endsWith('/meta/img')?p.replace('/meta/img','/img'):p+'/state'),wrap=s=>({exists:s.exists(),data:()=>s.val()});
+ return{doc:p=>({get:()=>ref(p).get().then(wrap),set:v=>ref(p).set(v),onSnapshot:(cb,er)=>ref(p).on('value',s=>cb(wrap(s)),er)})}}catch(e){return null}}
+async function getDb(){return fbDb()}
 $('#solo').onclick=async()=>{room=null;setLive();start()};
 async function start(){const N=+$('#n').value,im=await load(chosen),a=im.width/im.height,cols=Math.max(2,Math.round(Math.sqrt(N*a))),rows=Math.max(2,Math.round(N/cols));
  await init(chosen,cols,rows,Math.floor(Math.random()*1e9))}
-$('#mk').onclick=async()=>{const db=await getDb();if(!db){toast('Multiplayer needs the published, signed-in version. Starting solo.');room=null;setLive();return start()}
+$('#mk').onclick=async()=>{const db=await getDb();if(!db){toast('Multiplayer is not set up yet (Firebase config missing). Starting solo.');room=null;setLive();return start()}
  const code=Array.from({length:5},()=>'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.random()*32|0]).join('');
  try{await db.doc(`rooms/${code}/meta/img`).set({data:chosen});room={code,doc:db.doc('rooms/'+code),v:''};setLive(true);await start();await push();listen();try{location.hash=code}catch(e){}toast('Room '+code+' is live. Tap the code to copy a link.')}
  catch(e){toast('Could not create room ('+(e.code||'error')+'). Playing solo.');room=null;setLive();if(!S)start()}};
